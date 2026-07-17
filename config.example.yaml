@@ -1,0 +1,145 @@
+ollama:
+  base_url: http://localhost:11434
+  model: gemma64
+  context_size: 65536
+  temperature: 0.3
+  timeout_seconds: 120
+  keep_alive: 30m
+  retries: 2
+
+speech_to_text:
+  provider: faster-whisper
+  model: medium
+  language: auto
+  device: auto
+  compute_type: auto
+  beam_size: 5
+  silence_threshold: 0.01
+  allow_model_download: false
+  cpu_threads: 0
+
+text_to_speech:
+  provider: piper
+  executable_path: ""
+  voice_model_path: ""
+  english_voice_model_path: ""
+  speaking_rate: 0.9
+  max_spoken_characters: 420
+  max_spoken_sentences: 3
+  output_device: null
+
+wake_word:
+  enabled: true
+  phrase: Jarvis
+  sensitivity: 0.5
+  model_path: assets/wake_words/hey_jarvis_v0.1.onnx
+  cooldown_seconds: 2.0
+  resume_delay_seconds: 1.0
+
+hotkeys:
+  push_to_talk: ctrl+alt+space
+  stop_speaking: ctrl+alt+x
+
+vision:
+  max_width: 1600
+  max_height: 900
+  jpeg_quality: 85
+  save_debug_screenshots: false
+
+permissions:
+  medium_action_notifications: true
+  high_action_confirmation: true
+
+files:
+  searchable_directories:
+    - Desktop
+    - Documents
+    - Downloads
+    - Music
+  max_search_results: 30
+  max_read_bytes: 100000
+
+music:
+  directories:
+    - Music
+  max_search_results: 30
+
+memory:
+  database_path: memory/jarvis.db
+  restore_recent_messages: 20
+  max_history_messages: 200
+
+spotify:
+  enabled: false
+  access_token_environment_variable: SPOTIFY_ACCESS_TOKEN
+  request_timeout_seconds: 10
+
+browser:
+  preferred_browser: Chrome
+  search_url: https://www.google.com/search?q={query}
+
+applications:
+  fuzzy_match_threshold: 72
+  allowlist:
+    - name: Visual Studio Code
+      executable_path: ""
+      aliases: [VS Code, Code]
+    - name: Visual Studio
+      executable_path: ""
+      aliases: [VS]
+    - name: Spotify
+      executable_path: ""
+      aliases: []
+    - name: Steam
+      executable_path: ""
+      aliases: []
+    - name: Discord
+      executable_path: ""
+      aliases: []
+    - name: File Explorer
+      executable_path: C:\Windows\explorer.exe
+      aliases: [Explorer, Prieskumník]
+    - name: Chrome
+      executable_path: ""
+      aliases: [Google Chrome]
+    - name: Firefox
+      executable_path: ""
+      aliases: [Mozilla Firefox]
+    - name: Opera
+      executable_path: ""
+      aliases: []
+    - name: Notepad
+      executable_path: C:\Windows\System32\notepad.exe
+      aliases: [Poznámkový blok]
+    - name: Calculator
+      executable_path: ""
+      aliases: [Kalkulačka]
+    - name: Roblox Studio
+      executable_path: ""
+      aliases: []
+    - name: Blender
+      executable_path: ""
+      aliases: []
+    - name: Ollama
+      executable_path: ""
+      aliases: []
+
+audio:
+  microphone_device: null
+  sample_rate: 16000
+  block_duration_ms: 30
+  minimum_speech_seconds: 0.25
+  pre_roll_seconds: 0.3
+  silence_timeout_seconds: 1.2
+  maximum_recording_seconds: 30
+  store_raw_audio: false
+
+logging:
+  level: INFO
+  debug: false
+  max_bytes: 2000000
+  backup_count: 5
+
+ui:
+  language: auto
+  background: false

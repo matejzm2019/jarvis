@@ -1,0 +1,1 @@
+"""Allowlisted deterministic Windows tools."""
