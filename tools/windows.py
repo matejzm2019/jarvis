@@ -193,6 +193,9 @@ class SystemVolume:
     def mute(self) -> None:
         self.endpoint().SetMute(True, None)
 
+    def unmute(self) -> None:
+        self.endpoint().SetMute(False, None)
+
 
 class SetVolumeTool(BaseTool[VolumeArguments]):
     name = "set_volume"
@@ -250,6 +253,15 @@ class MuteVolumeTool(BaseTool[EmptyArguments]):
         return ToolResult(success=True, tool=self.name, message="Muted system volume.")
 
 
+class UnmuteVolumeTool(MuteVolumeTool):
+    name = "unmute_volume"
+    description = "Unmute Windows system output volume."
+
+    async def execute(self, arguments: EmptyArguments) -> ToolResult:
+        await asyncio.to_thread(self.volume.unmute)
+        return ToolResult(success=True, tool=self.name, message="Unmuted system volume.")
+
+
 class ShowDesktopTool(BaseTool[EmptyArguments]):
     name = "show_desktop"
     description = "Show the Windows desktop using the predefined Win+D shortcut."
@@ -289,5 +301,6 @@ def build_window_tools() -> list[BaseTool]:
         GetActiveWindowTool(), MinimizeWindowTool(windows), MaximizeWindowTool(windows),
         RestoreWindowTool(windows), CloseWindowTool(windows), SwitchWindowTool(windows),
         FocusWindowTool(windows), SetVolumeTool(volume), VolumeUpTool(volume),
-        VolumeDownTool(volume), MuteVolumeTool(volume), LockComputerTool(), ShowDesktopTool(),
+        VolumeDownTool(volume), MuteVolumeTool(volume), UnmuteVolumeTool(volume),
+        LockComputerTool(), ShowDesktopTool(),
     ]

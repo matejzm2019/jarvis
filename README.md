@@ -10,11 +10,11 @@ Implemented now:
 - Ollama health/model checks, async streaming chat, retries, cancellation, tools, and image-capable message transport;
 - central Slovak/English safety prompt and 64K-aware bounded context with local compaction;
 - typed Pydantic tool schemas/results and permission enforcement;
-- allowlisted application discovery/open/focus/listing;
+- configured plus automatic installed-application and Steam-game discovery/open/focus/listing;
 - bounded file/folder search, open, listing, metadata, recent files, and direct text extraction;
 - active-window and system information tools;
 - safe window management, exact Core Audio volume, Bluetooth-device enumeration, and desktop locking with confirmation;
-- allowlisted browser opening/search plus validated keyboard, mouse, hotkey, and privacy-gated clipboard tools;
+- public web search/page reading without browser cookies, YouTube search/autoplay, browser opening, and validated input tools;
 - on-demand microphone capture with adaptive VAD and silence stop;
 - offline-by-default Slovak/English faster-whisper transcription;
 - queued Piper speech with voice selection and cancellation;
@@ -147,17 +147,34 @@ Resolved paths must remain inside these roots. Credential/key extensions and kno
 
 ### Applications
 
-Only applications in `applications.allowlist` can be opened or focused. Set an exact executable path when Start Menu/App Paths discovery is insufficient:
+Jarvis accepts an application or game name, never a model-generated executable path. With discovery enabled it searches trusted local Start Menu `.lnk`/`.url` shortcuts, installed Steam manifests, Windows App Paths, and running executable paths. The allowlist remains useful for aliases and exact overrides:
 
 ```yaml
 applications:
+  allow_discovered_applications: true
   allowlist:
     - name: Visual Studio Code
       executable_path: C:\Users\YOUR_NAME\AppData\Local\Programs\Microsoft VS Code\Code.exe
       aliases: [VS Code, Code]
 ```
 
-Model-generated paths are never trusted. Jarvis resolves only configured paths, running processes, Start Menu shortcuts, and Windows App Paths entries after matching the allowlist.
+Set `allow_discovered_applications: false` to restore strict allowlist-only mode. Ambiguous or unresolved names fail safely instead of executing a guessed path.
+
+### Public web and YouTube
+
+Public browsing is opt-in through configuration and enabled in the supplied local config:
+
+```yaml
+browser:
+  preferred_browser: Chrome
+  search_url: https://www.google.com/search?q={query}
+  web_access_enabled: true
+  request_timeout_seconds: 15
+  max_page_characters: 12000
+  max_search_results: 5
+```
+
+`search_public_web` uses the public DuckDuckGo HTML search surface and `read_public_webpage` extracts bounded visible text without JavaScript, cookies, browser profiles, or authentication. Local/private/reserved network addresses and credential-bearing URLs are blocked. `play_youtube` searches the public YouTube results page, opens the first video with autoplay, and then uses normal Windows media controls for pause/resume/stop. These network requests disclose the explicit search query or requested public URL to the corresponding website; they never involve a cloud AI provider.
 
 ### Microphone and transcription
 
@@ -293,6 +310,14 @@ Try:
 Which applications are running?
 Open Notepad.
 Focus Visual Studio Code.
+Open Puck.
+Koľko je teraz hodín?
+Vyhľadaj na webe novinky o AMD Radeon.
+Pusti na YouTube Daft Punk Around the World.
+Pozastav video.
+Pokračuj vo videu.
+Stlm zvuk.
+Zapni zvuk.
 Find files named report.
 Find folders matching projects.
 What is the active window?
@@ -344,7 +369,8 @@ The folder includes project assets. Review absolute paths in the copied `config.
 
 ## Privacy and permissions
 
-- All prompts and requested screenshots go only to the configured loopback Ollama URL.
+- All AI prompts and requested screenshots go only to the configured loopback Ollama URL.
+- Explicit public web/YouTube requests send only the query or public URL to the selected website; browser cookies and logged-in content are never read.
 - No telemetry or cloud AI SDK is included.
 - Search is restricted to configured roots; sensitive files/folders are blocked.
 - Raw microphone audio is never written to disk; temporary synthesized Piper WAV files are deleted after playback.
@@ -363,7 +389,9 @@ Logs are rotated in `logs\jarvis.log` and `logs\error.log`. Tool names, success 
 - `running scripts is disabled`: use `Set-ExecutionPolicy -Scope Process Bypass` for the current shell.
 - `Cannot connect to local Ollama`: start Ollama and verify `http://localhost:11434/api/version` locally.
 - `Local model 'gemma64' is unavailable`: run `ollama list`; do not pull an unrelated fallback model.
-- `Application ... is not in the configured allowlist`: add the application and optionally its exact executable path to `config.yaml`.
+- Installed application or Steam game not found: verify its Start Menu shortcut/Steam manifest, use its full display name, or add an exact allowlist entry.
+- Public web request blocked: verify `browser.web_access_enabled`, use a public HTTP/HTTPS address, and do not target localhost/private networks.
+- YouTube returned no video: retry with a more specific title; YouTube page changes or rate limits can temporarily prevent public result extraction.
 - `Path is outside searchable directories or is sensitive`: add the intended non-sensitive root to `files.searchable_directories`.
 - `Whisper model 'medium' is not available locally`: run the explicit `audio.speech_to_text --download-model medium` command above or configure a local model directory.
 - `Microphone recording failed`: run `python -m audio.recorder`, select a valid input, and enable Windows microphone privacy access for desktop apps.

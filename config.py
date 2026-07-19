@@ -130,6 +130,10 @@ class SpotifyConfig(StrictModel):
 class BrowserConfig(StrictModel):
     preferred_browser: str = "Chrome"
     search_url: str = "https://www.google.com/search?q={query}"
+    web_access_enabled: bool = True
+    request_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    max_page_characters: int = Field(default=12_000, ge=1000, le=100_000)
+    max_search_results: int = Field(default=5, ge=1, le=10)
 
     @field_validator("search_url")
     @classmethod
@@ -155,6 +159,7 @@ class AllowedApplication(StrictModel):
 class ApplicationConfig(StrictModel):
     allowlist: list[AllowedApplication] = Field(default_factory=list)
     fuzzy_match_threshold: int = Field(default=72, ge=50, le=100)
+    allow_discovered_applications: bool = True
 
 
 class AudioConfig(StrictModel):

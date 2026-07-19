@@ -19,3 +19,5 @@ def test_settings_form_updates_and_validates_config() -> None:
     assert updated["text_to_speech"]["speaking_rate"] == 0.9
     assert updated["wake_word"]["resume_delay_seconds"] == 1.0
     assert updated["music"]["directories"] == ["Music"]
+    assert updated["browser"]["web_access_enabled"] is True
+    assert updated["applications"]["allow_discovered_applications"] is True

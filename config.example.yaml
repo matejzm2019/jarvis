@@ -77,9 +77,14 @@ spotify:
 browser:
   preferred_browser: Chrome
   search_url: https://www.google.com/search?q={query}
+  web_access_enabled: true
+  request_timeout_seconds: 15
+  max_page_characters: 12000
+  max_search_results: 5
 
 applications:
   fuzzy_match_threshold: 72
+  allow_discovered_applications: true
   allowlist:
     - name: Visual Studio Code
       executable_path: ""

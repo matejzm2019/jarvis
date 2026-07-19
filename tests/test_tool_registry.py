@@ -79,5 +79,6 @@ def test_registry_contains_all_requested_safe_desktop_tools(tmp_path) -> None:
         "press_key", "press_hotkey", "click_screen_position", "scroll",
         "get_clipboard_text", "set_clipboard_text", "open_website",
         "search_web_in_browser", "open_browser", "focus_browser",
-        "get_connected_bluetooth_devices",
+        "search_public_web", "read_public_webpage", "search_youtube", "play_youtube",
+        "get_connected_bluetooth_devices", "unmute_volume",
     } <= registry.names

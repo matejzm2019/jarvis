@@ -70,6 +70,8 @@ class JarvisOrchestrator:
             "click_screen_position": r"\b(click|klik)\b",
             "scroll": r"\b(scroll|posuň|roluj)\b",
             "search_web_in_browser": r"\b(search|google|web|internet|vyhľadaj|hladaj)\b",
+            "search_youtube": r"\b(youtube|video|vyhľadaj|vyhladaj|nájdi|najdi)\b",
+            "play_youtube": r"\b(youtube|video|play|pusti|prehraj)\b",
             "open_website": r"\b(open|otvor|website|stránk|web)\b",
             "lock_computer": r"\b(lock|zamkni|uzamkni)\b",
         }
@@ -118,7 +120,8 @@ class JarvisOrchestrator:
         permission_arguments = dict(call.function.arguments)
         for key in ("text", "query"):
             if key in permission_arguments and tool.name in {
-                "type_text", "set_clipboard_text", "search_web_in_browser"
+                "type_text", "set_clipboard_text", "search_web_in_browser",
+                "search_public_web", "search_youtube", "play_youtube",
             }:
                 permission_arguments[key] = f"<{len(str(permission_arguments[key]))} characters>"
         description = f"{tool.description} Arguments: {json.dumps(permission_arguments, ensure_ascii=False)}"
@@ -157,6 +160,13 @@ class JarvisOrchestrator:
         if isinstance(apps, list):
             names = [str(item.get("name", "")) for item in apps[:25] if isinstance(item, dict)]
             return f"{result.message} " + ", ".join(names)
+        web_results = result.data.get("results")
+        if isinstance(web_results, list):
+            items = [
+                f"{item.get('title')}: {item.get('url')}"
+                for item in web_results[:5] if isinstance(item, dict)
+            ]
+            return result.message if not items else f"{result.message} " + " | ".join(items)
         title = result.data.get("title")
         application = result.data.get("application")
         if title or application:

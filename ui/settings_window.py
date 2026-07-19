@@ -37,6 +37,9 @@ TEXT_FIELDS = (
     ("logging_level", "Logging level"),
     ("preferred_browser", "Preferred browser allowlist name"),
     ("browser_search_url", "Browser search HTTPS template"),
+    ("web_timeout", "Public web timeout (seconds)"),
+    ("web_page_characters", "Maximum public page characters"),
+    ("web_search_results", "Maximum public search results"),
     ("spotify_token_env", "Spotify access-token environment variable"),
 )
 MULTILINE_FIELDS = (
@@ -52,6 +55,8 @@ BOOLEAN_FIELDS = (
     ("save_debug_screenshots", "Keep debug screenshots"),
     ("background", "Background mode"),
     ("spotify_enabled", "Enable optional Spotify Web API"),
+    ("web_access_enabled", "Enable public web reading/search"),
+    ("discover_applications", "Discover installed apps and Steam games"),
 )
 
 
@@ -93,6 +98,9 @@ def settings_values(data: dict[str, Any]) -> dict[str, Any]:
         "logging_level": str(data.get("logging", {}).get("level", "INFO")),
         "preferred_browser": str(data.get("browser", {}).get("preferred_browser", "Chrome")),
         "browser_search_url": str(data.get("browser", {}).get("search_url", "https://www.google.com/search?q={query}")),
+        "web_timeout": str(data.get("browser", {}).get("request_timeout_seconds", 15)),
+        "web_page_characters": str(data.get("browser", {}).get("max_page_characters", 12000)),
+        "web_search_results": str(data.get("browser", {}).get("max_search_results", 5)),
         "spotify_token_env": str(data.get("spotify", {}).get("access_token_environment_variable", "SPOTIFY_ACCESS_TOKEN")),
         "searchable_directories": "\n".join(data.get("files", {}).get("searchable_directories", [])),
         "music_directories": "\n".join(data.get("music", {}).get("directories", ["Music"])),
@@ -104,6 +112,8 @@ def settings_values(data: dict[str, Any]) -> dict[str, Any]:
         "save_debug_screenshots": bool(data.get("vision", {}).get("save_debug_screenshots", False)),
         "background": bool(data.get("ui", {}).get("background", False)),
         "spotify_enabled": bool(data.get("spotify", {}).get("enabled", False)),
+        "web_access_enabled": bool(data.get("browser", {}).get("web_access_enabled", True)),
+        "discover_applications": bool(data.get("applications", {}).get("allow_discovered_applications", True)),
     }
 
 
@@ -153,6 +163,10 @@ def apply_settings_values(data: dict[str, Any], values: dict[str, Any]) -> dict[
     updated["browser"].update(
         preferred_browser=str(values["preferred_browser"]).strip(),
         search_url=str(values["browser_search_url"]).strip(),
+        web_access_enabled=bool(values["web_access_enabled"]),
+        request_timeout_seconds=float(values["web_timeout"]),
+        max_page_characters=int(values["web_page_characters"]),
+        max_search_results=int(values["web_search_results"]),
     )
     updated["spotify"].update(
         enabled=bool(values["spotify_enabled"]),
@@ -177,6 +191,7 @@ def apply_settings_values(data: dict[str, Any], values: dict[str, Any]) -> dict[
         aliases = [alias.strip() for alias in parts[2].split(",") if alias.strip()] if len(parts) > 2 else []
         apps.append({"name": name, "executable_path": parts[1] if len(parts) > 1 else "", "aliases": aliases})
     updated["applications"]["allowlist"] = apps
+    updated["applications"]["allow_discovered_applications"] = bool(values["discover_applications"])
     updated["permissions"].update(
         medium_action_notifications=bool(values["medium_notifications"]),
         high_action_confirmation=bool(values["high_confirmation"]),

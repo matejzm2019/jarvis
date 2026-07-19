@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +38,11 @@ class ApplicationTarget:
     path: Path | None
     source: str
     process_name: str | None = None
+    uri: str | None = None
 
 
 class ApplicationCatalog:
-    """Resolve only configured applications through trusted local sources."""
+    """Resolve configured or locally discovered applications without model-supplied paths."""
 
     def __init__(self, config: ApplicationConfig, alias_provider: Callable[[], dict[str, str]] | None = None) -> None:
         self.config = config
@@ -78,6 +80,15 @@ class ApplicationCatalog:
     def _labels(app: AllowedApplication) -> tuple[str, ...]:
         return tuple(label.casefold() for label in (app.name, *app.aliases))
 
+    def _labels_for_action(self, query: str) -> tuple[str, tuple[str, ...]]:
+        try:
+            app = self._allowed(query)
+            return app.name, self._labels(app)
+        except ValueError:
+            if not self.config.allow_discovered_applications:
+                raise
+            return query, (query.casefold(),)
+
     def _running_target(self, app: AllowedApplication) -> ApplicationTarget | None:
         labels = self._labels(app)
         for proc in psutil.process_iter(["name", "exe"]):
@@ -95,6 +106,10 @@ class ApplicationCatalog:
         return None
 
     def _shortcut_target(self, app: AllowedApplication) -> ApplicationTarget | None:
+        return self._shortcut_match(app.name, self._labels(app))
+
+    @staticmethod
+    def _shortcut_candidates() -> list[Path]:
         roots = [
             Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
             Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
@@ -105,21 +120,28 @@ class ApplicationCatalog:
                 continue
             for current, dirs, files in os.walk(root):
                 dirs[:] = [item for item in dirs if not item.startswith(".")]
-                candidates.extend(Path(current) / item for item in files if item.casefold().endswith(".lnk"))
-        labels = self._labels(app)
+                candidates.extend(
+                    Path(current) / item for item in files
+                    if Path(item).suffix.casefold() in {".lnk", ".url"}
+                )
+        return candidates
+
+    def _shortcut_match(self, name: str, labels: tuple[str, ...]) -> ApplicationTarget | None:
         scored = [
             (max(fuzz.WRatio(path.stem.casefold(), label) for label in labels), path)
-            for path in candidates
+            for path in self._shortcut_candidates()
         ]
         if not scored:
             return None
         score, path = max(scored, key=lambda item: item[0])
-        return ApplicationTarget(app.name, path, "Start Menu shortcut") if score >= 82 else None
+        return ApplicationTarget(path.stem if name == labels[0] else name, path, "Start Menu shortcut") if score >= 82 else None
 
     def _registry_target(self, app: AllowedApplication) -> ApplicationTarget | None:
+        return self._registry_match(app.name, self._labels(app))
+
+    def _registry_match(self, name: str, labels: tuple[str, ...]) -> ApplicationTarget | None:
         if winreg is None:
             return None
-        labels = self._labels(app)
         locations = (
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths"),
             (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\App Paths"),
@@ -142,15 +164,89 @@ class ApplicationCatalog:
                                 raw, _ = winreg.QueryValueEx(subkey, None)
                             path = Path(str(raw).strip('"')).resolve()
                             if path.is_file() and path.suffix.casefold() == ".exe":
-                                return ApplicationTarget(app.name, path, "App Paths registry")
+                                return ApplicationTarget(name, path, "App Paths registry")
                         except OSError:
                             continue
             except OSError:
                 continue
         return None
 
+    def _running_match(self, name: str, labels: tuple[str, ...]) -> ApplicationTarget | None:
+        for proc in psutil.process_iter(["name", "exe"]):
+            try:
+                process_name = str(proc.info.get("name") or "")
+                if max((fuzz.WRatio(Path(process_name).stem.casefold(), label) for label in labels), default=0) < 82:
+                    continue
+                executable = proc.info.get("exe")
+                path = Path(executable).resolve() if executable else None
+                if path and path.is_file() and path.suffix.casefold() == ".exe":
+                    return ApplicationTarget(name, path, "running process", process_name)
+            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+                continue
+        return None
+
+    @staticmethod
+    def _steam_roots() -> list[Path]:
+        roots: list[Path] = []
+        if winreg is not None:
+            for hive, key_path, value_name in (
+                (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+            ):
+                try:
+                    with winreg.OpenKey(hive, key_path) as key:
+                        value, _ = winreg.QueryValueEx(key, value_name)
+                    roots.append(Path(str(value)).expanduser().resolve(strict=False))
+                except OSError:
+                    continue
+        expanded = list(roots)
+        for root in roots:
+            library_file = root / "steamapps/libraryfolders.vdf"
+            try:
+                content = library_file.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for raw in re.findall(r'"path"\s+"([^"]+)"', content, re.IGNORECASE):
+                expanded.append(Path(raw.replace("\\\\", "\\")).resolve(strict=False))
+        return list(dict.fromkeys(expanded))
+
+    def _steam_match(self, query: str) -> ApplicationTarget | None:
+        candidates: list[tuple[int, str, str]] = []
+        for root in self._steam_roots():
+            for manifest in (root / "steamapps").glob("appmanifest_*.acf"):
+                try:
+                    content = manifest.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                app_id = re.search(r'"appid"\s+"(\d+)"', content)
+                name = re.search(r'"name"\s+"([^"]+)"', content)
+                if app_id and name:
+                    candidates.append((fuzz.WRatio(query.casefold(), name.group(1).casefold()), name.group(1), app_id.group(1)))
+        if not candidates:
+            return None
+        score, name, app_id = max(candidates, key=lambda item: item[0])
+        if score < max(82, self.config.fuzzy_match_threshold):
+            return None
+        return ApplicationTarget(name, None, "Steam library", uri=f"steam://rungameid/{app_id}")
+
     def resolve(self, query: str) -> ApplicationTarget:
-        app = self._allowed(query)
+        try:
+            app = self._allowed(query)
+        except ValueError:
+            if not self.config.allow_discovered_applications:
+                raise
+            labels = (query.casefold(),)
+            target = (
+                self._shortcut_match(query, labels)
+                or self._steam_match(query)
+                or self._registry_match(query, labels)
+                or self._running_match(query, labels)
+            )
+            if target:
+                return target
+            raise FileNotFoundError(
+                f"Could not find installed application or Steam game matching '{query}'"
+            ) from None
         if app.executable_path:
             path = Path(app.executable_path).expanduser().resolve()
             if path.is_file() and path.suffix.casefold() in {".exe", ".lnk"}:
@@ -166,8 +262,7 @@ class ApplicationCatalog:
     def focus(self, query: str) -> dict[str, Any]:
         if win32gui is None or win32process is None or win32con is None:
             raise RuntimeError("pywin32 is required for window focusing")
-        app = self._allowed(query)
-        labels = self._labels(app)
+        app_name, labels = self._labels_for_action(query)
         matches: list[tuple[int, str, int]] = []
 
         def collect(hwnd: int, _: object) -> None:
@@ -187,18 +282,17 @@ class ApplicationCatalog:
 
         win32gui.EnumWindows(collect, None)
         if not matches:
-            raise FileNotFoundError(f"No visible window found for {app.name}")
+            raise FileNotFoundError(f"No visible window found for {app_name}")
         hwnd, title, pid = matches[0]
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
         win32gui.SetForegroundWindow(hwnd)
-        return {"name": app.name, "title": title, "pid": pid}
+        return {"application": app_name, "name": app_name, "title": title, "pid": pid}
 
     def close(self, query: str) -> dict[str, Any]:
         """Request graceful close for visible windows of one allowlisted application."""
         if win32gui is None or win32process is None or win32con is None:
             raise RuntimeError("pywin32 is required for application closing")
-        app = self._allowed(query)
-        labels = self._labels(app)
+        app_name, labels = self._labels_for_action(query)
         handles: list[int] = []
 
         def collect(hwnd: int, _: object) -> None:
@@ -214,12 +308,12 @@ class ApplicationCatalog:
 
         win32gui.EnumWindows(collect, None)
         if not handles:
-            raise FileNotFoundError(f"No visible window found for {app.name}")
+            raise FileNotFoundError(f"No visible window found for {app_name}")
         for hwnd in handles:
             win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
         time.sleep(0.3)
         remaining = sum(bool(win32gui.IsWindow(hwnd)) for hwnd in handles)
-        return {"application": app.name, "requested": len(handles), "remaining": remaining}
+        return {"application": app_name, "requested": len(handles), "remaining": remaining}
 
     @staticmethod
     def foreground() -> dict[str, Any]:
@@ -239,7 +333,7 @@ class ApplicationCatalog:
 
 class OpenApplicationTool(BaseTool[ApplicationNameArguments]):
     name = "open_application"
-    description = "Open an application from the configured allowlist using trusted Windows sources."
+    description = "Open a configured or locally discovered installed application or Steam game by name; never accepts an executable path from the model."
     argument_model = ApplicationNameArguments
     risk = RiskLevel.LOW
 
@@ -249,11 +343,11 @@ class OpenApplicationTool(BaseTool[ApplicationNameArguments]):
 
     async def execute(self, arguments: ApplicationNameArguments) -> ToolResult:
         target = await asyncio.to_thread(self.catalog.resolve, arguments.name)
-        if target.path is None:
+        if target.path is None and target.uri is None:
             raise FileNotFoundError(f"No launch path found for {target.name}")
         if os.name != "nt" or not hasattr(os, "startfile"):
             raise RuntimeError("Opening applications is supported only on Windows")
-        await asyncio.to_thread(os.startfile, str(target.path))  # type: ignore[attr-defined]
+        await asyncio.to_thread(os.startfile, target.uri or str(target.path))  # type: ignore[attr-defined]
         return ToolResult(
             success=True,
             tool=self.name,
@@ -264,7 +358,7 @@ class OpenApplicationTool(BaseTool[ApplicationNameArguments]):
 
 class FocusApplicationTool(BaseTool[ApplicationNameArguments]):
     name = "focus_application"
-    description = "Bring a visible window of an allowlisted running application to the foreground."
+    description = "Bring a visible window of a configured or discovered running application to the foreground."
     argument_model = ApplicationNameArguments
     risk = RiskLevel.MEDIUM
 
@@ -279,7 +373,7 @@ class FocusApplicationTool(BaseTool[ApplicationNameArguments]):
 
 class CloseApplicationTool(BaseTool[ApplicationNameArguments]):
     name = "close_application"
-    description = "Request graceful close of visible windows for an allowlisted application; never force-kill processes."
+    description = "Request graceful close of visible windows for a configured or discovered application; never force-kill processes."
     argument_model = ApplicationNameArguments
     risk = RiskLevel.MEDIUM
 
@@ -311,7 +405,7 @@ class ListRunningApplicationsTool(BaseTool[EmptyArguments]):
 
 class FindInstalledApplicationTool(BaseTool[ApplicationNameArguments]):
     name = "find_installed_application"
-    description = "Resolve an allowlisted application from configured paths, running processes, Start Menu, or App Paths registry."
+    description = "Find an installed application or Steam game using configured paths, Start Menu, Steam manifests, App Paths, or running processes."
     argument_model = ApplicationNameArguments
 
     def __init__(self, catalog: ApplicationCatalog) -> None:

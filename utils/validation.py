@@ -33,7 +33,10 @@ def validate_runtime(config: JarvisConfig) -> list[str]:
         for app in config.applications.allowlist
         for label in (app.name, *app.aliases)
     }
-    if config.browser.preferred_browser.casefold() not in browser_names:
+    if (
+        not config.applications.allow_discovered_applications
+        and config.browser.preferred_browser.casefold() not in browser_names
+    ):
         warnings.append("Preferred browser is not present in the application allowlist.")
     if config.spotify.enabled and not os.environ.get(config.spotify.access_token_environment_variable):
         warnings.append(
