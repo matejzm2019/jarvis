@@ -2,6 +2,7 @@ ollama:
   base_url: http://localhost:11434
   model: gemma64
   context_size: 65536
+  max_output_tokens: 768
   temperature: 0.3
   timeout_seconds: 120
   keep_alive: 30m

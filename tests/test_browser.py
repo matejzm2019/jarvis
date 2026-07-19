@@ -5,7 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from config import BrowserConfig
-from tools.browser import PublicWebService, SearchWebInBrowserTool, WebSearchArguments, WebsiteArguments
+from tools.browser import (
+    OpenWebSectionTool, PublicWebService, SearchWebInBrowserTool,
+    WebSearchArguments, WebSectionArguments, WebsiteArguments,
+)
 
 
 class FakeBrowserService:
@@ -66,3 +69,27 @@ def test_youtube_result_is_converted_to_autoplay_url() -> None:
     result = asyncio.run(service.youtube_video("test song"))
     assert result["video_id"] == "abcdefghijk"
     assert result["url"].endswith("v=abcdefghijk&autoplay=1")
+
+
+def test_web_section_prefers_matching_service_and_gallery() -> None:
+    service = PublicWebService(BrowserConfig())
+    service.search = AsyncMock(return_value=[
+        {"title": "Forum", "url": "https://forum.example/", "snippet": "screenshots"},
+        {"title": "My Forza | Forza", "url": "https://forza.net/myforza", "snippet": "photo gallery"},
+    ])
+    result = asyncio.run(service.find_section("My Forza", "screenshots"))
+    assert result["url"] == "https://forza.net/myforza"
+
+
+def test_open_web_section_opens_resolved_public_result(monkeypatch) -> None:
+    service = PublicWebService(BrowserConfig())
+    service.find_section = AsyncMock(return_value={
+        "title": "My Forza | Forza", "url": "https://forza.net/myforza", "snippet": "gallery",
+    })
+    opened: list[str] = []
+    monkeypatch.setattr("tools.browser.BrowserService.open_url", opened.append)
+    result = asyncio.run(OpenWebSectionTool(service).execute(
+        WebSectionArguments(site="My Forza", section="screenshots")
+    ))
+    assert result.success
+    assert opened == ["https://forza.net/myforza"]

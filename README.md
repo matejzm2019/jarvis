@@ -14,7 +14,7 @@ Implemented now:
 - bounded file/folder search, open, listing, metadata, recent files, and direct text extraction;
 - active-window and system information tools;
 - safe window management, exact Core Audio volume, Bluetooth-device enumeration, and desktop locking with confirmation;
-- public web search/page reading without browser cookies, YouTube search/autoplay, browser opening, and validated input tools;
+- public web search/page reading, named website-section navigation, YouTube search/autoplay, browser opening, and validated input tools;
 - on-demand microphone capture with adaptive VAD and silence stop;
 - offline-by-default Slovak/English faster-whisper transcription;
 - queued Piper speech with voice selection and cancellation;
@@ -105,6 +105,7 @@ ollama:
   base_url: http://localhost:11434
   model: gemma64
   context_size: 65536
+  max_output_tokens: 768
 ```
 
 `ollama show gemma64` should show the custom Modelfile parameters/context metadata. If it does not reflect 65,536 tokens, rebuild the custom model outside Jarvis; Jarvis never pulls or replaces it. Each chat request also sends `num_ctx: 65536`.
@@ -174,7 +175,9 @@ browser:
   max_search_results: 5
 ```
 
-`search_public_web` uses the public DuckDuckGo HTML search surface and `read_public_webpage` extracts bounded visible text without JavaScript, cookies, browser profiles, or authentication. Local/private/reserved network addresses and credential-bearing URLs are blocked. `play_youtube` searches the public YouTube results page, opens the first video with autoplay, and then uses normal Windows media controls for pause/resume/stop. These network requests disclose the explicit search query or requested public URL to the corresponding website; they never involve a cloud AI provider.
+`search_public_web` uses the public DuckDuckGo HTML search surface and `read_public_webpage` extracts bounded visible text without JavaScript, cookies, browser profiles, or authentication. `open_web_section` resolves a named service and section, then opens the best public result in the default browser; for example, "Vyhľadaj My Forza a choď na časť stránky, kde sú screenshoty." opens the official My Forza gallery entry. The browser may use its existing signed-in session, but Jarvis never reads its cookies or private profile. Local/private/reserved network addresses and credential-bearing URLs are blocked. `play_youtube` searches the public YouTube results page, opens the first video with autoplay, and then uses normal Windows media controls for pause/resume/stop. These network requests disclose the explicit search query or requested public URL to the corresponding website; they never involve a cloud AI provider.
+
+Common one-step commands are routed deterministically without waiting for `gemma64`. For model-assisted requests, Jarvis sends only the relevant tool schemas instead of the complete registry and limits the default response budget with `ollama.max_output_tokens`; this reduces prompt processing and overly long spoken answers.
 
 ### Microphone and transcription
 
@@ -313,6 +316,8 @@ Focus Visual Studio Code.
 Open Puck.
 Koľko je teraz hodín?
 Vyhľadaj na webe novinky o AMD Radeon.
+Vyhľadaj herný volant.
+Vyhľadaj My Forza a choď na časť stránky, kde sú screenshoty.
 Pusti na YouTube Daft Punk Around the World.
 Pozastav video.
 Pokračuj vo videu.
@@ -391,6 +396,7 @@ Logs are rotated in `logs\jarvis.log` and `logs\error.log`. Tool names, success 
 - `Local model 'gemma64' is unavailable`: run `ollama list`; do not pull an unrelated fallback model.
 - Installed application or Steam game not found: verify its Start Menu shortcut/Steam manifest, use its full display name, or add an exact allowlist entry.
 - Public web request blocked: verify `browser.web_access_enabled`, use a public HTTP/HTTPS address, and do not target localhost/private networks.
+- Website section not found: include both the service and section name, for example `Vyhľadaj My Forza a choď na časť stránky, kde sú screenshoty`; sign in manually if the destination requires an account.
 - YouTube returned no video: retry with a more specific title; YouTube page changes or rate limits can temporarily prevent public result extraction.
 - `Path is outside searchable directories or is sensitive`: add the intended non-sensitive root to `files.searchable_directories`.
 - `Whisper model 'medium' is not available locally`: run the explicit `audio.speech_to_text --download-model medium` command above or configure a local model directory.

@@ -41,10 +41,13 @@ class IntentRouter:
         (re.compile(r"^čo znamená (táto|viditeľná) chyba[?.!]*$", re.I), "read_visible_error_message", {"scope": "active_window", "focus": "Odpovedz po slovensky."}),
     )
     _argument_routes: tuple[tuple[re.Pattern[str], str], ...] = (
+        (re.compile(r"^(?:(?:či|ci) by (?:si )?mi (?:ne)?vedel\s+)?(?:vyhľadaj|vyhladaj|vyhľadať|vyhladat|nájdi|najdi)\s+(?P<site>.+?)\s+a\s+(?:choď|chod|ísť|ist|prejdi|otvor)\s+(?:na|do)\s+(?:časť|cast|sekciu)(?:\s+stránky|\s+stranky)?(?:\s+kde\s+(?:sú|su))?\s+(?P<section>.+?)[?.!]*$", re.I), "open_web_section"),
+        (re.compile(r"^(?:find|search for)\s+(?P<site>.+?)\s+and\s+(?:open|go to)\s+(?:the\s+)?(?P<section>.+?)(?:\s+section)?[?.!]*$", re.I), "open_web_section"),
         (re.compile(r"^(?:play|pusti|prehraj)\s+(?:on\s+youtube|na\s+youtube|youtube)\s+(?P<query>.+)$", re.I), "play_youtube"),
         (re.compile(r"^(?:play|pusti|prehraj)\s+(?P<query>.+?)\s+(?:on|na)\s+youtube$", re.I), "play_youtube"),
         (re.compile(r"^(?:search|find|vyhľadaj|vyhladaj|nájdi|najdi)\s+(?:on\s+youtube|na\s+youtube|youtube)\s+(?P<query>.+?)(?:\s+a\s+(?:play|pusti|prehraj)(?:\s+(?:it|to))?)?$", re.I), "play_youtube"),
         (re.compile(r"^(?:search (?:the )?web for|google|vyhľadaj na webe|vyhladaj na webe|vygoogli)\s+(?P<query>.+)$", re.I), "search_public_web"),
+        (re.compile(r"^(?:search(?: for)?|vyhľadaj|vyhladaj|nájdi|najdi)\s+(?P<query>(?!(?:súbor|subor|file|priečinok|priecinok|folder)\b).+)$", re.I), "search_web_in_browser"),
     )
     _cancel = {"cancel", "stop", "stop speaking", "prestaň", "ticho", "zruš"}
 
@@ -55,8 +58,11 @@ class IntentRouter:
         for pattern, tool_name in self._argument_routes:
             match = pattern.fullmatch(normalized)
             if match and tool_name in available_tools:
+                arguments = {
+                    key: value.strip() for key, value in match.groupdict().items() if value is not None
+                }
                 return ToolCall(
-                    function=FunctionCall(name=tool_name, arguments={"query": match.group("query").strip()})
+                    function=FunctionCall(name=tool_name, arguments=arguments)
                 )
         for pattern, tool_name, arguments in self._routes:
             if tool_name in available_tools and pattern.search(normalized):

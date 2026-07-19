@@ -20,6 +20,7 @@ class OllamaConfig(StrictModel):
     base_url: HttpUrl = "http://localhost:11434"
     model: str = "gemma64"
     context_size: int = Field(default=65536, ge=8192, le=262144)
+    max_output_tokens: int = Field(default=768, ge=128, le=4096)
     temperature: float = Field(default=0.3, ge=0, le=2)
     timeout_seconds: float = Field(default=120, gt=0, le=600)
     keep_alive: str = "30m"

@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from rapidfuzz import fuzz
 
 from assistant.models import RiskLevel, ToolResult
 from config import BrowserConfig
@@ -39,6 +40,12 @@ class WebSearchArguments(BaseModel):
 
 class PublicWebSearchArguments(WebSearchArguments):
     max_results: int = Field(default=5, ge=1, le=10)
+
+
+class WebSectionArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    site: str = Field(min_length=1, max_length=200)
+    section: str = Field(min_length=1, max_length=200)
 
 
 class BrowserArguments(BaseModel):
@@ -125,7 +132,7 @@ class PublicWebService:
         if not self.config.web_access_enabled:
             raise RuntimeError("Public web access is disabled in configuration")
         current = url
-        headers = {"User-Agent": "JarvisLocal/0.6 (+public read; no cookies)"}
+        headers = {"User-Agent": "JarvisLocal/0.7 (+public read; no cookies)"}
         async with httpx.AsyncClient(timeout=self.config.request_timeout_seconds, headers=headers) as client:
             for _ in range(5):
                 await self._validate_url(current)
@@ -187,6 +194,23 @@ class PublicWebService:
             text, title = " ".join(content.split()), ""
         bounded = text[: self.config.max_page_characters]
         return {"url": final_url, "title": title, "content": bounded, "truncated": len(text) > len(bounded)}
+
+    async def find_section(self, site: str, section: str) -> dict[str, str]:
+        results = await self.search(f"{site} {section}", self.config.max_search_results)
+        if not results:
+            raise FileNotFoundError(f"No public result found for {site} / {section}")
+        labels = [section]
+        if any(word in section.casefold() for word in ("screenshot", "fot", "galér", "galer", "obráz", "obraz")):
+            labels.extend(("screenshots", "photo gallery", "photos", "gallery"))
+
+        def score(item: dict[str, str]) -> float:
+            identity = f"{item.get('title', '')} {item.get('url', '')}"
+            content = f"{identity} {item.get('snippet', '')}"
+            return 0.65 * fuzz.WRatio(site, identity) + 0.35 * max(
+                fuzz.partial_ratio(label, content) for label in labels
+            )
+
+        return max(results, key=score)
 
     async def youtube_video(self, query: str) -> dict[str, str]:
         search_url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
@@ -260,6 +284,27 @@ class ReadPublicWebpageTool(BaseTool[WebsiteArguments]):
         return ToolResult(success=True, tool=self.name, message=f"Read public page {arguments.url.host}.", data=data)
 
 
+class OpenWebSectionTool(BaseTool[WebSectionArguments]):
+    name = "open_web_section"
+    description = "Find a named public website or service and open the result that best matches a requested section such as screenshots, downloads, support, or gallery."
+    argument_model = WebSectionArguments
+    risk = RiskLevel.MEDIUM
+    timeout_seconds = 30
+
+    def __init__(self, service: PublicWebService) -> None:
+        super().__init__()
+        self.service = service
+
+    async def execute(self, arguments: WebSectionArguments) -> ToolResult:
+        result = await self.service.find_section(arguments.site, arguments.section)
+        await asyncio.to_thread(BrowserService.open_url, result["url"])
+        return ToolResult(
+            success=True, tool=self.name,
+            message=f"Opened {result['title']} for section {arguments.section}.",
+            data=result,
+        )
+
+
 class SearchYouTubeTool(BaseTool[WebSearchArguments]):
     name = "search_youtube"
     description = "Open an explicit YouTube search query in the default browser."
@@ -319,6 +364,7 @@ def build_browser_tools(catalog: ApplicationCatalog, config: BrowserConfig) -> l
     public = PublicWebService(config)
     return [
         OpenWebsiteTool(), SearchWebInBrowserTool(service), SearchPublicWebTool(public),
-        ReadPublicWebpageTool(public), SearchYouTubeTool(), PlayYouTubeTool(public),
+        ReadPublicWebpageTool(public), OpenWebSectionTool(public),
+        SearchYouTubeTool(), PlayYouTubeTool(public),
         OpenBrowserTool(service), FocusBrowserTool(service),
     ]

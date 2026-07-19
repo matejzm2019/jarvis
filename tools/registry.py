@@ -53,8 +53,12 @@ class ToolRegistry:
     def names(self) -> set[str]:
         return set(self._tools)
 
-    def schemas(self) -> list[dict[str, Any]]:
-        return [tool.schema() for tool in self._tools.values()]
+    def schemas(self, names: set[str] | None = None) -> list[dict[str, Any]]:
+        """Return all schemas or only a request-relevant subset."""
+        return [
+            tool.schema() for name, tool in self._tools.items()
+            if names is None or name in names
+        ]
 
 
 def build_phase1_registry(config: JarvisConfig, memory: MemoryStore | None = None) -> ToolRegistry:

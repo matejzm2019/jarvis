@@ -17,6 +17,7 @@ TEXT_FIELDS = (
     ("ollama_base_url", "Ollama base URL"),
     ("ollama_model", "Ollama model"),
     ("ollama_context", "Context size"),
+    ("ollama_output_tokens", "Maximum model output tokens"),
     ("microphone", "Microphone device/index"),
     ("whisper_model", "Whisper model"),
     ("speech_language", "Speech language (auto/sk/en)"),
@@ -78,6 +79,7 @@ def settings_values(data: dict[str, Any]) -> dict[str, Any]:
         "ollama_base_url": str(data.get("ollama", {}).get("base_url", "")),
         "ollama_model": str(data.get("ollama", {}).get("model", "")),
         "ollama_context": str(data.get("ollama", {}).get("context_size", 65536)),
+        "ollama_output_tokens": str(data.get("ollama", {}).get("max_output_tokens", 768)),
         "microphone": str(data.get("audio", {}).get("microphone_device") or ""),
         "whisper_model": str(data.get("speech_to_text", {}).get("model", "medium")),
         "speech_language": str(data.get("speech_to_text", {}).get("language", "auto")),
@@ -130,6 +132,7 @@ def apply_settings_values(data: dict[str, Any], values: dict[str, Any]) -> dict[
         base_url=str(values["ollama_base_url"]).strip(),
         model=str(values["ollama_model"]).strip(),
         context_size=int(values["ollama_context"]),
+        max_output_tokens=int(values["ollama_output_tokens"]),
     )
     updated["audio"]["microphone_device"] = _device_value(str(values["microphone"]))
     updated["speech_to_text"].update(

@@ -24,6 +24,44 @@ from memory.storage import MemoryStore
 from tools.registry import ToolRegistry, build_default_registry
 from utils.paths import PROJECT_ROOT
 
+_TOOL_HINTS: tuple[tuple[re.Pattern[str], set[str]], ...] = (
+    (re.compile(r"(?i)\b(web|website|site|page|internet|online|search|google|youtube|news|latest|current|today|weather|download|gallery|screenshots?|stránk|strank|sekci|časť|cast|vyhľadaj|vyhladaj|vygoogli)\b"), {
+        "open_website", "search_web_in_browser", "search_public_web", "read_public_webpage",
+        "open_web_section", "search_youtube", "play_youtube", "open_browser", "focus_browser",
+    }),
+    (re.compile(r"(?i)\b(app|application|program|game|steam|process|launch|start|open|close|focus|switch|spusti|otvor|zavri|hra|hru|aplik|proces)\b"), {
+        "open_application", "close_application", "focus_application", "list_running_applications",
+        "find_installed_application", "get_foreground_application", "switch_window", "focus_window",
+    }),
+    (re.compile(r"(?i)(?:\b(file|folder|directory|document|download|recent|summari[sz]e|read|súbor|subor|priečinok|priecinok|adresár|adresar|dokument|zosumarizuj|zhrň|zhrn|prečítaj|precitaj)\b|[a-z]:\\|\.(txt|md|json|csv|log|py|js|ts|html|css|xml|ya?ml|pdf|docx)\b)"), {
+        "search_files", "search_folders", "open_file", "open_folder", "list_folder",
+        "read_text_file", "summarize_file", "find_recent_files", "get_file_information",
+        "find_file_by_partial_name",
+    }),
+    (re.compile(r"(?i)\b(screen|visible|screenshot|window|button|error|obrazovk|vidíš|vidis|okno|tlačid|tlacid|chyba)\b"), {
+        "capture_screen", "capture_active_window", "describe_screen", "summarize_visible_content",
+        "locate_visible_ui_element", "read_visible_error_message", "get_active_window",
+        "minimize_window", "maximize_window", "restore_window", "close_window", "switch_window", "focus_window",
+    }),
+    (re.compile(r"(?i)\b(music|song|track|video|media|spotify|volume|sound|hudb|skladb|zvuk|hlasitosť|hlasitost)\b"), {
+        "play_music", "pause_music", "resume_music", "stop_music", "next_track", "previous_track",
+        "get_current_track", "set_media_volume", "search_local_music", "play_local_audio_file",
+        "set_volume", "volume_up", "volume_down", "mute_volume", "unmute_volume", "play_youtube", "search_youtube",
+    }),
+    (re.compile(r"(?i)\b(cpu|gpu|ram|memory|disk|battery|network|bluetooth|uptime|system|time|procesor|pamäť|pamat|disk|batéri|bateri|sieť|siet|čas|cas|hodín|hodin)\b"), {
+        "get_cpu_usage", "get_gpu_information", "get_memory_usage", "get_disk_usage", "get_battery_status",
+        "get_network_status", "get_connected_bluetooth_devices", "get_current_time", "get_system_uptime",
+    }),
+    (re.compile(r"(?i)\b(type|write|press|key|hotkey|click|mouse|scroll|clipboard|napíš|napis|stlač|stlac|klik|roluj|schránk)\b"), {
+        "type_text", "press_key", "press_hotkey", "click_screen_position", "scroll",
+        "get_clipboard_text", "set_clipboard_text",
+    }),
+    (re.compile(r"(?i)\b(remember|forget|preference|alias|history|pamät|pamat|zabudni|preferenc|históri|histori)\b"), {
+        "remember_fact", "list_memories", "forget_memory", "set_preference", "clear_preferences",
+        "clear_conversation_history", "set_application_alias", "set_folder_alias",
+    }),
+)
+
 
 class JarvisOrchestrator:
     """Coordinate context, local model tool selection, permissions, and execution."""
@@ -41,7 +79,10 @@ class JarvisOrchestrator:
         database_path = configured_database if configured_database.is_absolute() else PROJECT_ROOT / configured_database
         self.memory = MemoryStore(database_path, config.memory.max_history_messages)
         self.registry = registry or build_default_registry(config, client, self.memory)
-        self.context = ContextManager(context_size=config.ollama.context_size)
+        self.context = ContextManager(
+            context_size=config.ollama.context_size,
+            output_reserve=config.ollama.max_output_tokens,
+        )
         self.context.preferences = self.memory.preferences()
         self.context.messages = restore_messages(self.memory, config.memory.restore_recent_messages)
         self.conversation = Conversation(self.context, self.memory)
@@ -51,6 +92,14 @@ class JarvisOrchestrator:
         self.state = AssistantState()
         self.log = logging.getLogger("jarvis.orchestrator")
         self._active_request = ""
+
+    def _relevant_tool_names(self, request: str) -> set[str]:
+        """Keep Ollama prompts small by exposing only tools relevant to this request."""
+        selected: set[str] = set()
+        for pattern, names in _TOOL_HINTS:
+            if pattern.search(request):
+                selected.update(names)
+        return selected & self.registry.names
 
     @staticmethod
     def _explicit_tool_request(tool_name: str, request: str) -> bool:
@@ -72,6 +121,7 @@ class JarvisOrchestrator:
             "search_web_in_browser": r"\b(search|google|web|internet|vyhľadaj|hladaj)\b",
             "search_youtube": r"\b(youtube|video|vyhľadaj|vyhladaj|nájdi|najdi)\b",
             "play_youtube": r"\b(youtube|video|play|pusti|prehraj)\b",
+            "open_web_section": r"\b(web|website|site|page|section|search|find|stránk|strank|sekci|časť|cast|vyhľadaj|vyhladaj|nájdi|najdi)\b",
             "open_website": r"\b(open|otvor|website|stránk|web)\b",
             "lock_computer": r"\b(lock|zamkni|uzamkni)\b",
         }
@@ -118,10 +168,10 @@ class JarvisOrchestrator:
                 error="Explicit user intent was not detected",
             )
         permission_arguments = dict(call.function.arguments)
-        for key in ("text", "query"):
+        for key in ("text", "query", "site", "section"):
             if key in permission_arguments and tool.name in {
                 "type_text", "set_clipboard_text", "search_web_in_browser",
-                "search_public_web", "search_youtube", "play_youtube",
+                "search_public_web", "search_youtube", "play_youtube", "open_web_section",
             }:
                 permission_arguments[key] = f"<{len(str(permission_arguments[key]))} characters>"
         description = f"{tool.description} Arguments: {json.dumps(permission_arguments, ensure_ascii=False)}"
@@ -144,6 +194,8 @@ class JarvisOrchestrator:
     def _direct_result(result: ToolResult) -> str:
         if not result.success:
             return f"{result.message} {result.error or ''}".strip()
+        if result.tool == "open_web_section":
+            return result.message
         if result.tool == "list_memories":
             parts: list[str] = []
             facts = result.data.get("facts", [])
@@ -199,12 +251,13 @@ class JarvisOrchestrator:
             return answer
 
         self.state.set(AssistantStatus.THINKING)
+        tool_schemas = self.registry.schemas(self._relevant_tool_names(request))
         for _ in range(4):
             if self.context.needs_compaction():
                 await self.context.compact(self._summarize)
             response = await self.client.chat(
                 self.context.build(),
-                self.registry.schemas(),
+                tool_schemas,
                 stream=True,
                 on_token=on_token,
             )

@@ -95,6 +95,7 @@ class OllamaClient:
             "options": {
                 "temperature": self.config.temperature,
                 "num_ctx": self.config.context_size,
+                "num_predict": self.config.max_output_tokens,
             },
         }
         if tools:

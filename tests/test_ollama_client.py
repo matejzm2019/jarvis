@@ -19,6 +19,7 @@ def transport_with_models(models: list[str]) -> httpx.MockTransport:
             payload = json.loads(request.content)
             assert payload["model"] == "gemma64"
             assert payload["options"]["num_ctx"] == 65536
+            assert payload["options"]["num_predict"] == 768
             if payload["stream"]:
                 content = b'{"message":{"role":"assistant","content":"Hello"},"done":true}\n'
                 return httpx.Response(200, content=content)

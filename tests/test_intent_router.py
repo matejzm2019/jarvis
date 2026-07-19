@@ -35,3 +35,16 @@ def test_routes_youtube_and_public_web_queries() -> None:
     web = router.route("Vyhľadaj na webe počasie Bratislava", tools)
     assert web.function.name == "search_public_web"
     assert web.function.arguments["query"] == "počasie Bratislava"
+
+
+def test_routes_site_section_and_basic_search_without_llm() -> None:
+    tools = {"open_web_section", "search_web_in_browser"}
+    router = IntentRouter()
+    section = router.route(
+        "Ci by mi nevedel vyhladat My Forza a ist na cast stranky kde su screenshoty", tools
+    )
+    assert section.function.name == "open_web_section"
+    assert section.function.arguments == {"site": "My Forza", "section": "screenshoty"}
+    search = router.route("Vyhladaj herný volant", tools)
+    assert search.function.name == "search_web_in_browser"
+    assert search.function.arguments["query"] == "herný volant"

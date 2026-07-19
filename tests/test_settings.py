@@ -21,3 +21,4 @@ def test_settings_form_updates_and_validates_config() -> None:
     assert updated["music"]["directories"] == ["Music"]
     assert updated["browser"]["web_access_enabled"] is True
     assert updated["applications"]["allow_discovered_applications"] is True
+    assert updated["ollama"]["max_output_tokens"] == 768
